@@ -12,6 +12,7 @@
 
 #include "pipex.h"
 
+
 void	ft_free_tab(char **tab)
 {
 	int i = 0;
@@ -21,6 +22,28 @@ void	ft_free_tab(char **tab)
 		i++;
 	}
 	free (tab);
+}
+
+void	error(char *message, char **args, char *cmd, int exit_code)
+{
+	(void) cmd;
+	if (message && ft_strcmp (message, "Error opening input file\n") !=0 && ft_strcmp(message, "Command not found: ") != 0)
+		ft_putstr_fd(message, 2);
+	if (ft_strcmp(message, "Command not found: ") == 0)
+	{
+		ft_putstr_fd("Command not found: ", 2);
+		ft_putstr_fd(cmd, 2);
+		ft_putstr_fd("\n", 2);
+		ft_free_tab(args);
+		args = 0;
+	}
+	if (args)
+	{
+		ft_putstr_fd(args[0], 2);
+		ft_free_tab(args);
+	}
+	if (ft_strcmp (message, "Error opening input file\n") !=0 || exit_code != 0)
+		exit(exit_code);
 }
 
 char	*join_path_cmd(char *path, char *cmd)
@@ -48,6 +71,8 @@ char *get_command_path(char *cmd, char **envp)
 	i = 0;
 	path_var = NULL;
 
+	if (!ft_strncmp(cmd, "/", 1) || !ft_strncmp(cmd, "./", 2) || !ft_strncmp(cmd, "../", 3))
+		return (cmd);
 	while (envp[i])
 	{
 		if (ft_strncmp ("PATH=", envp[i], 5) == 0)
@@ -88,34 +113,22 @@ void execute_cmd(char *cmd, int input_fd, int output_fd, char **envp)
 	char **args;
 	char *cmd_path;
 	
+	if (!cmd || cmd[0] == 0)
+		error("Error: Command is empty\n", NULL, NULL, 1);
 	args = ft_split(cmd, ' ');
 	if (!args || !args[0])
-	{
-		ft_free_tab(args);
-		perror("Error parsing command");
-		exit (1);
-	}
+		error("Error parsing command\n", args, NULL, 1);
 	cmd_path = get_command_path(args[0], envp);
 	if (!cmd_path)
-	{
-		ft_putstr_fd("Command not found: ", 2);
-		ft_putstr_fd(args[0], 2);
-		ft_putstr_fd("\n", 2);
-		ft_free_tab(args);
-		exit(127);
-	}
+		error("Command not found: ", args, cmd, 127);
 	if(dup2(input_fd, STDIN_FILENO) == -1 || dup2(output_fd, STDOUT_FILENO) == -1)
 	{
-		perror("Error redirecting input/output");
 		free(cmd_path);
-		ft_free_tab(args);
-		exit (1);
+		error("Error redirecting input/output", args, NULL, 1);
 	}
 	execve(cmd_path, args, envp);
-	perror("Error executing command");
 	free(cmd_path);
-	ft_free_tab(args);
-	exit (1);
+	error("Error executing command", args, NULL, 1);
 }
 
 int main(int argc, char **argv, char **envp)
@@ -135,37 +148,31 @@ int main(int argc, char **argv, char **envp)
 	}
 	
 	fd_in = open(argv[1], O_RDONLY);
-	/*if (fd_in == -1)
-	{
-		perror("Error opening input file\n");
-		return (1);
-	}*/
+	if (fd_in == -1)
+		error("Error opening input file\n", NULL, NULL, 0);
 	fd_out = open(argv[4], O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	if (fd_out == -1)
 	{
 		if (!ft_strncmp(argv[2], "sleep", 5) == 0)
 		{
-			perror ("error opening output file\n");
 			close(fd_in);
-			return (1);
+			error ("Error opening output file\n", NULL, NULL, 1);
 		}
 	}
 	if (pipe(pipe_fd) == -1)
 	{
-		perror("Error creating pipe");
 		close(fd_in);
 		close(fd_out);
-		return (1);
+		error("Error creating pipe", NULL, NULL, 1);
 	}
 	pid1 = fork();
 	if (pid1 == -1)
 	{
-		perror("error forking cmd1");
 		close(fd_in);
 		close(fd_out);
 		close (pipe_fd[0]);
 		close (pipe_fd[1]);
-		return (1);
+		error("Error forking cmd1", NULL, NULL, 1);
 	}
 	if (pid1 == 0)
 	{
@@ -176,12 +183,11 @@ int main(int argc, char **argv, char **envp)
 	pid2 = fork();
 	if (pid2 == -1)
 	{
-		perror("Error forking cmd2");
 		close(fd_in);
 		close(fd_out);
 		close(pipe_fd[0]);
 		close(pipe_fd[1]);
-		return (1);
+		error("Error forking cmd2", NULL, NULL, 1);
 	}
 	if (pid2 == 0)
 	{
